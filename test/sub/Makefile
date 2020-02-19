@@ -12,7 +12,7 @@ SRIPOUT := lysubtmp
 MAINCRC := lysub
 XMAINCRC := lysub.xzip
 
-SHARELIBS := -lpthread -L../lib -lmbus -lmosquitto -lcrypto -lssl
+SHARELIBS := -lpthread -L../lib -lmbus 
 
 all: information  $(MAINOUT)
 

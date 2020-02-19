@@ -261,7 +261,7 @@ will_mosq.o : ../lib/will_mosq.c ../lib/will_mosq.h
 	${CROSS_COMPILE}${CC} $(BROKER_CPPFLAGS) $(BROKER_CFLAGS) -c $< -o $@
 
 mosquitto_passwd : mosquitto_passwd.o
-	${CROSS_COMPILE}${CC} ${LDFLAGS} $^ -o $@ $(PASSWD_LDADD)
+	${CROSS_COMPILE}${CC} ${LDFLAGS} $^ -o $@ -ldl -lrt $(PASSWD_LDADD) 
 
 mosquitto_passwd.o : mosquitto_passwd.c
 	${CROSS_COMPILE}${CC} -I.. $(CPPFLAGS) $(CFLAGS) -c $< -o $@

@@ -8,8 +8,8 @@ MQTT_OUTPATH=../lib
 
 CFLAGS=-c  -fpic -O0 -g -s -lstdc++ -rdynamic -funwind-tables -ffunction-sections -Wall -Werror -DDEBUG
 
-LDFLAGS= -fpic -shared -L../lib -lmosquitto 
-
+LDFLAGS= -fpic -shared -ldl -lrt -Wl,--whole-archive -lssl -lcrypto -lmosquitto -Wl,--no-whole-archive
+LIBS= -L/usr/local/arm_lib  -L../lib
 
 INCLUDE= -I$(MQTT_INPATH)
 
@@ -36,7 +36,7 @@ libmbus.xzip: $(EXECUTABLE)
 	@cp libmbus.so $(MQTT_OUTPATH)
 
 $(EXECUTABLE): $(OBJECTS) 	
-	$(CC) $(LDFLAGS)  $^ -o $@
+	$(CC) $(LDFLAGS) $(LIBS) $^ -o $@ 
 	@echo Make $@ OK
 	
 install:
