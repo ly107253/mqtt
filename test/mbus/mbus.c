@@ -16,23 +16,21 @@ static void mosq_message_callback(struct mosquitto *mosq, void *userdata, const 
 {
     if(message->payloadlen)
 	{
-		printf("RecvTopic(%s), Msg(%s) Len(%d)\r\n", message->topic, (char*)message->payload,message->payloadlen);
+		printf("RecvTopic(%s), Len(%d)\r\n", message->topic, message->payloadlen);
     }
 	else
 	{
         printf("%s (null)\n", message->topic);
     }
+
 }
 
 static void mosq_connect_callback(struct mosquitto *mosq, void *userdata, int result)
 {
-	char topic[MQTT_TOPIC_SIZE] = {0};
-
     if(!result){
         /* Subscribe to broker information topics on successful connect. */
 		/* Subscribe to the topic. */
-		sprintf(topic, "%s", "jun");
-        mosquitto_subscribe(mosq, NULL, topic, 2);
+        mosquitto_subscribe(mosq, NULL, "#", 2);
 	
         printf("Connect success\n");
     }
@@ -47,10 +45,14 @@ void mosq_subscribe_callback(struct mosquitto *mosq, void *obj, int mid, int qos
     /*sub top success*/
 }
 
-void* msg_mqtt_init(void)
+void* msg_mqtt_init(MQTT_CONFIG_T *pCfg)
 {
 	struct mosquitto *mosq = NULL;
 
+	if(pCfg == NULL)
+	{
+		return NULL;
+	}
 	//mosquitto库初始化
 	mosquitto_lib_init();
 	//创建客户端
@@ -60,6 +62,11 @@ void* msg_mqtt_init(void)
         mosquitto_lib_cleanup();
 		
         return NULL;
+	}
+	
+	if((pCfg->username || pCfg->password) && mosquitto_username_pw_set(mosq, pCfg->username, pCfg->password)){
+		mosquitto_lib_cleanup();
+		return NULL;
 	}
 
 	/*log*/
@@ -71,7 +78,7 @@ void* msg_mqtt_init(void)
 	/*recv sub request*/
     mosquitto_subscribe_callback_set(mosq, mosq_subscribe_callback);
 	
-	mosquitto_connect(mosq, "127.0.0.1", 1883, 60);        //建立连接
+	mosquitto_connect(mosq, pCfg->host, pCfg->port, pCfg->keepalive);        //建立连接
 	
 	if(MOSQ_ERR_SUCCESS != mosquitto_loop_start(mosq))
 	{
@@ -84,25 +91,26 @@ void* msg_mqtt_init(void)
 	return (void*)mosq;
 }
 
-int msg_mqtt_send(void* hSocket,void* buf,int len)
+int msg_mqtt_send(void* hMosq,MQTT_MSG_T *pMsg)
 {	
-	char topic[MQTT_TOPIC_SIZE] = {0};
-	
-	sprintf(topic, "%s","jun");	
-	
-	if(mosquitto_publish((struct mosquitto*)hSocket,NULL,topic,len,buf,0,0) == MOSQ_ERR_SUCCESS)
+	if(pMsg == NULL)
 	{
-		return 1;
+		return -1;
+	}
+	
+	if(mosquitto_publish((struct mosquitto*)hMosq,NULL,pMsg->topic,pMsg->payloadlen,pMsg->payload,0,0) == MOSQ_ERR_SUCCESS)
+	{
+		return -1;
 	}
 
 	return 0;
 }
 
-void msg_mqtt_destory(void* hSocket)
+void msg_mqtt_destory(void* hMosq)
 {
-	if(hSocket != NULL)
+	if(hMosq != NULL)
 	{
-		mosquitto_destroy(hSocket);
+		mosquitto_destroy(hMosq);
 		mosquitto_lib_cleanup();
 	}
 }
