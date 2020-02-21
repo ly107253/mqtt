@@ -13,7 +13,7 @@ LIBS= -L/usr/local/arm_lib  -L../lib
 
 INCLUDE= -I$(MQTT_INPATH)
 
-SOURCES_C= ./mbus.c
+SOURCES_C= ./mqtt.c
 			
 OBJECTS=$(SOURCES_C:.c=.o) 
 EXECUTABLE=./libmbustmp
