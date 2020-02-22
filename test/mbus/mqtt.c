@@ -3,60 +3,27 @@
 #include <string.h>
 #include <unistd.h>
 #include "mqtt.h"
-
-
-/**< log*/
-static void mosq_log_callback(struct mosquitto *hMosq, void *userdata, int level, const char *str)
+/**
+ ******************************************************************************
+ * @brief		mqtt参数配置
+ * @param[in]	hMosq : MQTT客户端句柄
+ * @param[in]	cfg	  : MQTT客户端配置
+ * @return      成功返回 MOSQ_ERR_SUCCESS 失败返回 1
+ * @details
+ ******************************************************************************
+ */
+static int mqtt_client_opts_set(struct mosquitto *hMosq, MQTT_CONFIG_T *pCfg)
 {
-    /* Pring all log messages regardless of level. */ 
-}
-
-/**< recv*/
-static void mosq_message_callback(struct mosquitto *hMosq, void *userdata, const struct mosquitto_message *message)
-{
-    if(message->payloadlen)
-	{
-		printf("RecvTopic(%s), Len(%d)\r\n", message->topic, message->payloadlen);
-    }
-	else
-	{
-        printf("%s (null)\n", message->topic);
-    }
-
-}
-
-static void mosq_connect_callback(struct mosquitto *hMosq, void *userdata, int result)
-{
-    if(!result){
-        /* Subscribe to broker information topics on successful connect. */
-		/* Subscribe to the topic. */
-        mosquitto_subscribe(hMosq, NULL, "#", 2);
-	
-        printf("Connect success\n");
-    }
-	else
-	{
-        printf("Connect failed\n");
-    }
-}
-
-void mosq_subscribe_callback(struct mosquitto *hMosq, void *obj, int mid, int qos_count, const int *granted_qos)
-{
-    /*sub top success*/
-}
-
-static int mqtt_client_opts_set(struct mosquitto *hMosq, MQTT_CONFIG_T *cfg)
-{
-	if(cfg->will_topic && mosquitto_will_set(hMosq, cfg->will_topic,
-				cfg->will_payloadlen, cfg->will_payload, cfg->will_qos,
-				cfg->will_retain)){
+	if(pCfg->will_topic && mosquitto_will_set(hMosq, pCfg->will_topic,
+				pCfg->will_payloadlen, pCfg->will_payload, pCfg->will_qos,
+				pCfg->will_retain)){
 
 		printf("Error: Problem setting will.\n");
 		mosquitto_lib_cleanup();
 		return 1;
 	}
 
-	if((cfg->username || cfg->password) && mosquitto_username_pw_set(hMosq, cfg->username, cfg->password)){
+	if((pCfg->username || pCfg->password) && mosquitto_username_pw_set(hMosq, pCfg->username, pCfg->password)){
 		printf("Error: Problem setting username and/or password.\n");
 		mosquitto_lib_cleanup();
 		return 1;
@@ -64,8 +31,17 @@ static int mqtt_client_opts_set(struct mosquitto *hMosq, MQTT_CONFIG_T *cfg)
 
 	return MOSQ_ERR_SUCCESS;
 }
-
-void* mqtt_client_init(MQTT_CONFIG_T *pCfg)
+/**
+ ******************************************************************************
+ * @brief		MQTT客户端初始化
+ * @param[in]	pCfg  : MQTT客户端配置
+ * @return      
+ 				hMosq   客户端句柄
+ 				NULL    初始化失败
+ * @details
+ ******************************************************************************
+ */
+struct mosquitto* mqtt_client_init(MQTT_CONFIG_T *pCfg)
 {
 	struct mosquitto *hMosq = NULL;
 
@@ -87,21 +63,17 @@ void* mqtt_client_init(MQTT_CONFIG_T *pCfg)
 	}
 	
 	/*log*/
-	mosquitto_log_callback_set(hMosq, mosq_log_callback);
+	mosquitto_log_callback_set(hMosq, pCfg->pfLog);
 	/*connect to broken*/
-    mosquitto_connect_callback_set(hMosq, mosq_connect_callback);
+    mosquitto_connect_callback_set(hMosq, pCfg->pfConnect);
+	/*disconnect to broken*/
+    mosquitto_disconnect_callback_set(hMosq, pCfg->pfDisconnect);
 	/*recv sub data*/
-    mosquitto_message_callback_set(hMosq, mosq_message_callback);
+    mosquitto_message_callback_set(hMosq, pCfg->pfMessage);
 	/*recv sub request*/
-    mosquitto_subscribe_callback_set(hMosq, mosq_subscribe_callback);
-	
-	mosquitto_connect(hMosq, pCfg->host, pCfg->port, pCfg->keepalive);        //建立连接
-	
-	if(MOSQ_ERR_SUCCESS != mosquitto_loop_start(hMosq)){
-		goto cleanup;
-	}
-	
-	return (void*)hMosq;
+    mosquitto_subscribe_callback_set(hMosq, pCfg->pfSubscribe);
+
+	return hMosq;
 	
 cleanup:
 	mosquitto_destroy(hMosq);
@@ -109,8 +81,78 @@ cleanup:
 	
 	return NULL;
 }
+/**
+ ******************************************************************************
+ * @brief		MQTT客户端连接Brocker 
+ * @param[in]	hMosq  : MQTT客户端句柄
+ * @param[in]	pCfg   : MQTT客户端配置
+ * @return      
+ 				MOSQ_ERR_SUCCESS   连接成功
+ * @details
+ ******************************************************************************
+ */
+int mqtt_client_connect(struct mosquitto* hMosq,MQTT_CONFIG_T *pCfg)
+{	
+	int port;
 
-void mqtt_client_destory(void* hMosq)
+	if(pCfg->port < 0)
+	{
+		port = 1883;
+	}
+	else 
+	{
+		port = pCfg->port;
+	}
+
+	return  mosquitto_connect(hMosq, pCfg->host, port, pCfg->keepalive);
+}
+/**
+ ******************************************************************************
+ * @brief		MQTT客户端与Brocker断开连接 
+ * @param[in]	hMosq  : MQTT客户端句柄
+ * @param[in]	pCfg   : MQTT客户端配置
+ * @return      
+ 				MOSQ_ERR_SUCCESS   断开连接成功
+ * @details
+ ******************************************************************************
+ */
+int mqtt_client_disconnect(struct mosquitto* hMosq,MQTT_CONFIG_T *pCfg)
+{
+	return mosquitto_disconnect(hMosq);
+}
+/**
+ ******************************************************************************
+ * @brief		启动MQTT客户端（创建一个线程，一直处理socket信息，断开后会自动重连）
+ * @param[in]	hMosq  : MQTT客户端句柄
+ * @return      
+ * @details
+ ******************************************************************************
+ */
+ int mqtt_client_loop_start(struct mosquitto* hMosq)
+{
+	return mosquitto_loop_start(hMosq);
+}
+/**
+******************************************************************************
+* @brief		 启动MQTT客户端（不会自动创建线程，需要用户自己创建线程）
+* @param[in]	 hMosq	: MQTT客户端句柄
+* @return 	 
+* @details
+******************************************************************************
+*/
+void mqtt_lient_loop_forever(struct mosquitto* hMosq)
+{
+	 mosquitto_loop_forever(hMosq,-1,1);
+}
+/**
+******************************************************************************
+* @brief		 销毁MQTT客户端
+* @param[in]	 hMosq	: MQTT客户端句柄
+* @return 	 
+* @details
+******************************************************************************
+*/
+void mqtt_client_destory(struct mosquitto* hMosq)
 {
 	if(hMosq != NULL)
 	{
@@ -118,14 +160,16 @@ void mqtt_client_destory(void* hMosq)
 		mosquitto_lib_cleanup();
 	}
 }
-
-int mqtt_msg_recv(void* hMosq,MQTT_MSG_T *pMsg)
-{
-	
-	return 0;
-}
-
-int mqtt_msg_send(void* hMosq,MQTT_MSG_T *pMsg)
+/**
+******************************************************************************
+* @brief		 MQTT客户端发布信息
+* @param[in]	 hMosq	: MQTT客户端句柄
+* @param[in]	 pMsg	: MQTT消息体
+* @return 	 
+* @details
+******************************************************************************
+*/
+int mqtt_msg_send(struct mosquitto* hMosq,MQTT_MSG_T *pMsg)
 {	
 	if(pMsg == NULL)
 	{
