@@ -1,18 +1,18 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include "mqtt.h"
-#include "mosquitto.h"
 
 
 /**< log*/
-static void mosq_log_callback(struct mosquitto *mosq, void *userdata, int level, const char *str)
+static void mosq_log_callback(struct mosquitto *hMosq, void *userdata, int level, const char *str)
 {
     /* Pring all log messages regardless of level. */ 
 }
 
 /**< recv*/
-static void mosq_message_callback(struct mosquitto *mosq, void *userdata, const struct mosquitto_message *message)
+static void mosq_message_callback(struct mosquitto *hMosq, void *userdata, const struct mosquitto_message *message)
 {
     if(message->payloadlen)
 	{
@@ -25,12 +25,12 @@ static void mosq_message_callback(struct mosquitto *mosq, void *userdata, const 
 
 }
 
-static void mosq_connect_callback(struct mosquitto *mosq, void *userdata, int result)
+static void mosq_connect_callback(struct mosquitto *hMosq, void *userdata, int result)
 {
     if(!result){
         /* Subscribe to broker information topics on successful connect. */
 		/* Subscribe to the topic. */
-        mosquitto_subscribe(mosq, NULL, "#", 2);
+        mosquitto_subscribe(hMosq, NULL, "#", 2);
 	
         printf("Connect success\n");
     }
@@ -40,14 +40,34 @@ static void mosq_connect_callback(struct mosquitto *mosq, void *userdata, int re
     }
 }
 
-void mosq_subscribe_callback(struct mosquitto *mosq, void *obj, int mid, int qos_count, const int *granted_qos)
+void mosq_subscribe_callback(struct mosquitto *hMosq, void *obj, int mid, int qos_count, const int *granted_qos)
 {
     /*sub top success*/
 }
 
-void* msg_mqtt_init(MQTT_CONFIG_T *pCfg)
+static int mqtt_client_opts_set(struct mosquitto *hMosq, MQTT_CONFIG_T *cfg)
 {
-	struct mosquitto *mosq = NULL;
+	if(cfg->will_topic && mosquitto_will_set(hMosq, cfg->will_topic,
+				cfg->will_payloadlen, cfg->will_payload, cfg->will_qos,
+				cfg->will_retain)){
+
+		printf("Error: Problem setting will.\n");
+		mosquitto_lib_cleanup();
+		return 1;
+	}
+
+	if((cfg->username || cfg->password) && mosquitto_username_pw_set(hMosq, cfg->username, cfg->password)){
+		printf("Error: Problem setting username and/or password.\n");
+		mosquitto_lib_cleanup();
+		return 1;
+	}
+
+	return MOSQ_ERR_SUCCESS;
+}
+
+void* mqtt_client_init(MQTT_CONFIG_T *pCfg)
+{
+	struct mosquitto *hMosq = NULL;
 
 	if(pCfg == NULL)
 	{
@@ -55,43 +75,57 @@ void* msg_mqtt_init(MQTT_CONFIG_T *pCfg)
 	}
 	//mosquitto库初始化
 	mosquitto_lib_init();
+	
 	//创建客户端
-	mosq = mosquitto_new(NULL,true,NULL);
-	if(mosq == NULL)
-	{
-        mosquitto_lib_cleanup();
-		
-        return NULL;
+	hMosq = mosquitto_new(pCfg->id,pCfg->clean_session,pCfg);
+	if(hMosq == NULL){
+		goto cleanup;
+	}
+	//mosq客户端配置
+	if(mqtt_client_opts_set(hMosq, pCfg)){
+		goto cleanup;
 	}
 	
-	if((pCfg->username || pCfg->password) && mosquitto_username_pw_set(mosq, pCfg->username, pCfg->password)){
-		mosquitto_lib_cleanup();
-		return NULL;
-	}
-
 	/*log*/
-	mosquitto_log_callback_set(mosq, mosq_log_callback);
+	mosquitto_log_callback_set(hMosq, mosq_log_callback);
 	/*connect to broken*/
-    mosquitto_connect_callback_set(mosq, mosq_connect_callback);
+    mosquitto_connect_callback_set(hMosq, mosq_connect_callback);
 	/*recv sub data*/
-    mosquitto_message_callback_set(mosq, mosq_message_callback);
+    mosquitto_message_callback_set(hMosq, mosq_message_callback);
 	/*recv sub request*/
-    mosquitto_subscribe_callback_set(mosq, mosq_subscribe_callback);
+    mosquitto_subscribe_callback_set(hMosq, mosq_subscribe_callback);
 	
-	mosquitto_connect(mosq, pCfg->host, pCfg->port, pCfg->keepalive);        //建立连接
+	mosquitto_connect(hMosq, pCfg->host, pCfg->port, pCfg->keepalive);        //建立连接
 	
-	if(MOSQ_ERR_SUCCESS != mosquitto_loop_start(mosq))
-	{
-		mosquitto_destroy(mosq);
-		mosquitto_lib_cleanup();
-
-		return NULL;
+	if(MOSQ_ERR_SUCCESS != mosquitto_loop_start(hMosq)){
+		goto cleanup;
 	}
-
-	return (void*)mosq;
+	
+	return (void*)hMosq;
+	
+cleanup:
+	mosquitto_destroy(hMosq);
+	mosquitto_lib_cleanup();
+	
+	return NULL;
 }
 
-int msg_mqtt_send(void* hMosq,MQTT_MSG_T *pMsg)
+void mqtt_client_destory(void* hMosq)
+{
+	if(hMosq != NULL)
+	{
+		mosquitto_destroy(hMosq);
+		mosquitto_lib_cleanup();
+	}
+}
+
+int mqtt_msg_recv(void* hMosq,MQTT_MSG_T *pMsg)
+{
+	
+	return 0;
+}
+
+int mqtt_msg_send(void* hMosq,MQTT_MSG_T *pMsg)
 {	
 	if(pMsg == NULL)
 	{
@@ -106,12 +140,4 @@ int msg_mqtt_send(void* hMosq,MQTT_MSG_T *pMsg)
 	return 0;
 }
 
-void msg_mqtt_destory(void* hMosq)
-{
-	if(hMosq != NULL)
-	{
-		mosquitto_destroy(hMosq);
-		mosquitto_lib_cleanup();
-	}
-}
 

@@ -2,24 +2,33 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
-#include "mbus.h"
+#include "mqtt.h"
 
+static MQTT_CONFIG_T s_ClientCfg;
+
+static int mqtt_client_config_load( void )
+{
+	s_ClientCfg.host = "127.0.0.1";
+	s_ClientCfg.port = 1883;
+	s_ClientCfg.keepalive = 60;
+	s_ClientCfg.username = "admin";
+	s_ClientCfg.password = "admin";
+	s_ClientCfg.clean_session = true;
+	s_ClientCfg.id = "lymqtt_pub";
+	
+	return 1;
+}
 
 int main(int argc, char *argv[])
 {
-	MQTT_CONFIG_T cfg;
 	MQTT_MSG_T    msg;
 	void* myHandle;	
 	char buf[MSG_MAX_SIZE];
+	
+	mqtt_client_config_load();
 
-	memset(&cfg,0x00,sizeof(MQTT_CONFIG_T));
-	cfg.host = "127.0.0.1";
-	cfg.port = 1883;
-	cfg.keepalive = 60;
-	cfg.username = "admin";
-	cfg.password = "admin";
 	//≥ı ºªØmqttø‚
-	myHandle = msg_mqtt_init(&cfg);
+	myHandle = mqtt_client_init(&s_ClientCfg);
 	if(myHandle == NULL)
 	{
 		return -1;
@@ -33,7 +42,7 @@ int main(int argc, char *argv[])
 		msg.payload = (void*)buf;
 		msg.payloadlen = strlen(buf)+1;
 		
-		if(msg_mqtt_send(myHandle,&msg) == 0)
+		if(mqtt_msg_send(myHandle,&msg) == 0)
 		{
 			break;
 		}
@@ -41,7 +50,7 @@ int main(int argc, char *argv[])
 		sleep(2);
 	}
 
-	msg_mqtt_destory(myHandle);
+	mqtt_client_destory(myHandle);
 	
 	return 0;
 }
